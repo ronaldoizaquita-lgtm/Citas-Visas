@@ -1,3 +1,59 @@
+<?php
+// =========================
+//  Gestión de datos (PHP)
+// =========================
+
+$file = "citas.json";
+
+// Si el archivo no existe, lo crea
+if(!file_exists($file)){
+    file_put_contents($file, "[]");
+}
+
+// Leer citas
+$data = json_decode(file_get_contents($file), true);
+
+// Guardar cita
+if(isset($_POST["action"]) && $_POST["action"] === "save"){
+    $new = [
+        "fullName" => $_POST["fullName"],
+        "email" => $_POST["email"],
+        "phone" => $_POST["phone"],
+        "passport" => $_POST["passport"],
+        "visaType" => $_POST["visaType"],
+        "date" => $_POST["date"],
+        "time" => $_POST["time"],
+        "notes" => $_POST["notes"]
+    ];
+    $data[] = $new;
+    file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT));
+    header("Location: index.php?ok=1");
+    exit;
+}
+
+// Borrar todas
+if(isset($_GET["deleteAll"])){
+    file_put_contents($file, "[]");
+    header("Location: index.php");
+    exit;
+}
+
+// Exportar CSV
+if(isset($_GET["export"])){
+    header("Content-Type: text/csv");
+    header("Content-Disposition: attachment; filename=citas.csv");
+    $f = fopen("php://output", "w");
+    fputcsv($f, ["Nombre","Correo","Teléfono","Pasaporte","Visa","Fecha","Hora","Notas"]);
+    foreach($data as $c){
+        fputcsv($f, [
+            $c["fullName"], $c["email"], $c["phone"], $c["passport"],
+            $c["visaType"], $c["date"], $c["time"], $c["notes"]
+        ]);
+    }
+    exit;
+}
+?>
+
 <!doctype html>
 <html lang="es">
 <head>
@@ -45,20 +101,9 @@ body{
   box-shadow:0 8px 28px rgba(0,0,0,0.06);
 }
 
-.header{
-  grid-column:1 / -1;
-}
-
-.header h1{
-  margin:0;
-  color:var(--ecci-blue);
-}
-
-.header p{
-  margin:0;
-  font-size:14px;
-  color:var(--muted);
-}
+.header{ grid-column:1 / -1; }
+.header h1{ margin:0; color:var(--ecci-blue);}
+.header p{ margin:0; font-size:14px; color:var(--muted); }
 
 input, select, textarea{
   width:100%;
@@ -97,7 +142,6 @@ input, select, textarea{
   border-radius:12px;
   margin-bottom:10px;
 }
-
 </style>
 </head>
 
@@ -113,7 +157,13 @@ input, select, textarea{
   <section class="card">
     <h2 style="color:var(--ecci-blue); margin-top:0">Agendar Cita</h2>
 
-    <form id="form">
+    <?php if(isset($_GET["ok"])): ?>
+      <p style="color:green;font-weight:600">✔ Cita guardada correctamente</p>
+    <?php endif; ?>
+
+    <form method="POST">
+
+      <input type="hidden" name="action" value="save">
 
       <div class="row">
         <div>
@@ -167,7 +217,7 @@ input, select, textarea{
 
       <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap">
         <button class="btn primary" type="submit">Guardar</button>
-        <button class="btn ghost" type="button" id="clear">Limpiar</button>
+        <button class="btn ghost" type="reset">Limpiar</button>
       </div>
 
     </form>
@@ -179,96 +229,46 @@ input, select, textarea{
 
     <input id="search" placeholder="Buscar..." style="margin-bottom:10px">
 
-    <div id="list"></div>
+    <div id="list">
+      <?php if(count($data)==0): ?>
+          <p style="color:#888">No hay citas registradas.</p>
+      <?php endif; ?>
+
+      <?php foreach($data as $c): ?>
+        <div class="appointment">
+          <strong><?= $c["fullName"] ?></strong><br>
+          <span><?= $c["visaType"] ?> – <?= $c["date"] ?> <?= $c["time"] ?></span><br>
+          <span><?= $c["email"] ?></span><br><br>
+
+          <button class="btn ghost" onclick="openWhats('<?= $c['phone'] ?>','<?= $c['fullName'] ?>')">
+            WhatsApp
+          </button>
+        </div>
+      <?php endforeach; ?>
+    </div>
 
     <div style="display:flex; gap:10px; margin-top:12px">
-      <button class="btn ghost" id="export">Exportar CSV</button>
-      <button class="btn danger" id="deleteAll">Borrar Todo</button>
+      <a class="btn ghost" href="index.php?export">Exportar CSV</a>
+      <a class="btn danger" href="index.php?deleteAll" onclick="return confirm('¿Eliminar todas las citas?')">Borrar Todo</a>
     </div>
   </aside>
 
 </div>
 
 <script>
-let data = JSON.parse(localStorage.getItem("citas_ecci") || "[]");
-
-const form = document.getElementById("form");
-const list = document.getElementById("list");
-const search = document.getElementById("search");
-
-function save(){
-  localStorage.setItem("citas_ecci", JSON.stringify(data));
-  render();
-}
-
-function render(){
-  list.innerHTML = "";
-  const q = search.value.toLowerCase();
-
-  const filtered = data.filter(c =>
-    (c.fullName + c.phone + c.visaType).toLowerCase().includes(q)
-  );
-
-  if(filtered.length === 0){
-    list.innerHTML = "<p style='color:#888'>No hay citas registradas.</p>";
-    return;
-  }
-
-  filtered.forEach(c=>{
-    const div = document.createElement("div");
-    div.className = "appointment";
-    div.innerHTML = `
-      <strong>${c.fullName}</strong><br>
-      <span>${c.visaType} – ${c.date} ${c.time}</span><br>
-      <span>${c.email}</span><br><br>
-      <button class="btn ghost" onclick="openWhats('${c.phone}','${c.fullName}')">WhatsApp</button>
-    `;
-    list.appendChild(div);
-  });
-}
-
 function openWhats(phone, name){
   const msg = encodeURIComponent(`Hola, soy ${name} y deseo información sobre mi cita de visa.`);
   window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
 }
 
-form.addEventListener("submit", e=>{
-  e.preventDefault();
-  const fd = Object.fromEntries(new FormData(form).entries());
-
-  data.push(fd);
-  save();
-
-  form.reset();
-  alert("Cita guardada.");
-});
-
-document.getElementById("clear").onclick = ()=> form.reset();
-
-document.getElementById("deleteAll").onclick = ()=>{
-  if(confirm("¿Eliminar todas las citas?")){
-    data = [];
-    save();
-  }
-};
-
-document.getElementById("export").onclick = ()=>{
-  let csv = "Nombre,Correo,Teléfono,Pasaporte,Visa,Fecha,Hora,Notas\n";
-  data.forEach(c=>{
-    csv += `${c.fullName},${c.email},${c.phone},${c.passport},${c.visaType},${c.date},${c.time},"${c.notes}"\n`;
+const search = document.getElementById("search");
+const list = document.getElementById("list");
+search.addEventListener("input", ()=>{
+  let q = search.value.toLowerCase();
+  document.querySelectorAll(".appointment").forEach(div=>{
+    div.style.display = div.innerText.toLowerCase().includes(q) ? "" : "none";
   });
-
-  const blob = new Blob([csv], {type:"text/csv"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "citas.csv";
-  a.click();
-};
-
-search.addEventListener("input", render);
-
-render();
+});
 </script>
 
 </body>
